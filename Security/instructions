@@ -1,0 +1,107 @@
+#install docker on host
+#https://docs.docker.com/engine/install/ubuntu/
+
+#move to folder
+cd ~/Desktop/Security/
+
+#build Zeek Container
+sudo docker build -t zeek-base:1.0 .
+
+#start container
+sudo docker run -itd --name zeek --net=host -p 9200:9200 -p 5601:5601 zeek-base:1.0
+
+#open container terminal
+sudo docker exec -it zeek bash
+
+
+#----------------------------------------------------------------
+#in docker
+
+service elasticsearch start
+
+#due to errror, run at host:   sudo sysctl -w vm.max_map_count=262144
+
+
+#produce password for the default elastic user
+/usr/share/elasticsearch/bin/elasticsearch-setup-passwords auto
+
+
+#as per previous output edit elasticsearch.username, elasticsearch.password 
+sudo nano /etc/kibana/kibana.yml
+
+#due to error on http://localhost:5601/, it is madatory to copy the ouput of this to kibana.yml
+sudo /usr/share/kibana/bin/kibana-encryption-keys generate
+
+#start kibana  / check on localhost:5601
+service kibana start
+
+#start zeek
+zeekctl deploy
+
+#setup passwords for filebeat as per previous output
+nano etc/filebeat/filebeat.yml
+
+#start filebeat
+filebeat setup
+service filebeat start
+
+#on host change time to UTC due to error
+
+#config es_username, es_password, on elastalert
+#also enter the slack webhook for the alerts
+#https://hooks.slack.com/services/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
+cd elastalert/
+nano config.yaml
+
+elastalert-create-index
+
+#needed cause of an error
+python3.8 -m pip install APScheduler --upgrade
+
+#command to run only one rule  for testing
+python3 -m elastalert.elastalert --verbose --rule example_rules/example_frequency.yaml
+
+#----------------------------------------------------------------
+
+#from host
+apt-get install tcpreplay
+
+
+#test face#
+sudo docker start zeek
+sudo docker exec -it zeek bash
+#----------------------------------------------------------------
+#in docker
+#after reboot start the services again, not needed if machine is already up
+service elasticsearch start
+service kibana start
+zeekctl deploy
+service filebeat start
+#
+
+#copy the rules from config
+cd elastalert/
+mkdir my_rules
+cp example_rules/example_frequency.yaml my_rules/example_frequency.yaml 
+cp example_rules/ssh.yaml my_rules/ssh.yaml 
+
+#start elasticalert with my_rules
+python3 -m elastalert.elastalert --verbose
+#----------------------------------------------------------------
+
+#with elastalert running from host
+cd ~/Desktop/Security/pcaps-IoT/
+
+#check network interface --> intf1
+ip link show
+
+sudo tcpreplay --intf1=enp0s3 scan-hostport-6-dec.pcap
+sudo tcpreplay --intf1=enp0s3 dos-synflooding-3-dec.pcap
+sudo tcpreplay --intf1=enp0s3 dos-synflooding-1-dec.pcap
+sudo tcpreplay --intf1=enp0s3 mirai-udpflooding-1-dec.pcap
+sudo tcpreplay --intf1=enp0s3 mitm-arpspoofing-1-dec.pcap
+
+#or run all pcaps
+sudo tcpreplay --intf1=enp0s3 *
+
+
